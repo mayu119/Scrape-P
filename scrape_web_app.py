@@ -4,8 +4,7 @@ import logging
 import requests
 from bs4 import BeautifulSoup, NavigableString
 from datetime import datetime
-import spacy
-import ginza
+# spaCy + ginzaを削除してルールベース処理のみ使用
 from fastapi import FastAPI, Request, Form, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -44,98 +43,16 @@ def detect_animanch_urls(text):
         logging.error(f"URL検出中にエラー発生: {e}")
         return []
 
-# テキスト分割関数群
+# 軽量テキスト分割（ルールベースのみ）
 def split_long_text(text, max_length=80, min_length=30):
-    """意味を壊さず自然な分割を行い、短すぎる行を吸収するハイブリッド手法"""
+    """軽量なルールベース分割（spaCy不要）"""
     try:
-        blocks = semantic_aware_split(text, max_length, min_length)
+        blocks = improved_rule_based_split(text, max_length)
+        return absorb_short_lines(blocks, min_length)
     except Exception as e:
-        logging.warning(f"semantic_aware_split失敗: {e}")
-        try:
-            blocks = bunsetsu_based_split(text, max_length)
-        except Exception as e:
-            logging.warning(f"bunsetsu_based_split失敗: {e}")
-            blocks = improved_rule_based_split(text, max_length)
-    return absorb_short_lines(blocks, min_length)
-
-def semantic_aware_split(text, max_length=80, min_length=30):
-    nlp = spacy.load("ja_ginza")
-    doc = nlp(text)
-    scores = calculate_break_scores(doc)
-    result = []
-    start_pos = 0
-    while start_pos < len(text):
-        ideal_end = min(start_pos + max_length, len(text))
-        best_break = find_best_break_position(scores, start_pos, ideal_end, min_length)
-        if best_break > start_pos:
-            result.append(text[start_pos:best_break].strip())
-            start_pos = best_break
-        else:
-            result.append(text[start_pos:ideal_end].strip())
-            start_pos = ideal_end
-    return result
-
-def calculate_break_scores(doc):
-    scores = [0] * len(doc.text)
-    for token in doc:
-        pos = token.idx + len(token.text) - 1
-        if token.text in ['。', '！', '？']:
-            scores[pos] = 100
-        elif token.text in ['、', '，']:
-            scores[pos] = 80
-        elif token.pos_ == 'ADP':
-            scores[pos] = 60
-        elif token.dep_ in ['case', 'aux']:
-            scores[pos] = 40
-        elif token.dep_ == 'acl':
-            scores[pos] = 35
-        elif token.dep_ == 'cc':
-            scores[pos] = 10
-    return scores
-
-def find_best_break_position(scores, start, end, min_length=30):
-    for i in range(end-1, start+min_length-1, -1):
-        if scores[i] >= 60:
-            return i+1
-    for i in range(end-1, start+min_length-1, -1):
-        if scores[i] > 0:
-            return i+1
-    return start
-
-def bunsetsu_based_split(text, max_length=80):
-    nlp = spacy.load("ja_ginza")
-    doc = nlp(text)
-    result = []
-    current_block = ""
-    for sent in doc.sents:
-        bunsetsu_groups = build_bunsetsu_groups(sent)
-        for group in bunsetsu_groups:
-            if len(current_block + group) <= max_length:
-                current_block += group
-            else:
-                if current_block.strip():
-                    result.append(current_block.strip())
-                if len(group) > max_length:
-                    sub_parts = improved_rule_based_split(group, max_length)
-                    result.extend(sub_parts[:-1])
-                    current_block = sub_parts[-1]
-                else:
-                    current_block = group
-    if current_block.strip():
-        result.append(current_block.strip())
-    return result
-
-def build_bunsetsu_groups(sent):
-    groups = []
-    current_group = ""
-    for token in sent:
-        current_group += token.text
-        if token.pos_ in ['ADP', 'AUX']:
-            groups.append(current_group)
-            current_group = ""
-    if current_group:
-        groups.append(current_group)
-    return groups
+        logging.error(f"テキスト分割でエラー: {e}")
+        # 最も基本的な分割にフォールバック
+        return simple_split(text, max_length)
 
 def improved_rule_based_split(text, max_length=80):
     break_chars = [
@@ -197,6 +114,30 @@ def absorb_short_lines(blocks, min_length=30):
         else:
             merged.append(block)
     return merged
+
+def simple_split(text, max_length=80):
+    """最も基本的な分割（フォールバック用）"""
+    if len(text) <= max_length:
+        return [text]
+    
+    result = []
+    current_pos = 0
+    
+    while current_pos < len(text):
+        end_pos = min(current_pos + max_length, len(text))
+        
+        # 句読点で分割を試みる
+        if end_pos < len(text):
+            # 後ろから句読点を探す
+            for i in range(end_pos - 1, current_pos + max_length // 2, -1):
+                if text[i] in ['。', '！', '？', '、', '，']:
+                    end_pos = i + 1
+                    break
+        
+        result.append(text[current_pos:end_pos])
+        current_pos = end_pos
+    
+    return result
 
 # テキストクリーニング（Textprocessor.pyから）
 def clean_text(text):
@@ -992,47 +933,93 @@ async def scrape_url(url: str = Form(...)):
     """URLからスクレイピングを実行"""
     try:
         # URLの検証
+        if not url or not url.strip():
+            return "URLが入力されていません。"
+        
+        url = url.strip()
         if not url.startswith('https://bbs.animanch.com/board/'):
-            return "無効なURLです。あにまんchの掲示板URLを入力してください。"
+            return "無効なURLです。あにまんchの掲示板URLを入力してください。\n例: https://bbs.animanch.com/board/123456/"
         
         # スクレイピング実行
         scraped_data = await scrape_animanch(url)
-        if not scraped_data or not scraped_data['comments']:
-            return "コメントが抽出できませんでした。"
+        if not scraped_data:
+            return "ページの読み込みに失敗しました。URLを確認してください。"
+        
+        if not scraped_data.get('comments'):
+            return "コメントが見つかりませんでした。このページにはコメントがない可能性があります。"
         
         # コメントの再構成と整形
         organized_comments = reorganize_comments(scraped_data['comments'])
+        if not organized_comments:
+            return "コメントの処理に失敗しました。"
+        
         formatted_text = format_with_speaker(organized_comments)
+        if not formatted_text or not formatted_text.strip():
+            return "テキストの整形に失敗しました。"
         
         return formatted_text
         
+    except requests.exceptions.RequestException as e:
+        logging.error(f"ネットワークエラー: {e}")
+        return f"ネットワークエラーが発生しました。しばらくしてから再試行してください。"
     except Exception as e:
-        logging.error(f"スクレイピング処理でエラー: {e}")
-        return f"エラーが発生しました: {str(e)}"
+        logging.error(f"スクレイピング処理でエラー: {e}", exc_info=True)
+        return f"処理中にエラーが発生しました。管理者に連絡してください。\nエラー詳細: {str(e)[:100]}..."
 
 @app.post("/process")
 async def process_text(text: str = Form(...), split_text: bool = Form(True)):
     """テキストを処理してゆっくりボイス形式で出力"""
     try:
-        if not text.strip():
-            return "テキストが空です。"
+        # 入力検証
+        if not text or not text.strip():
+            return "テキストが入力されていません。処理したいテキストを貼り付けてください。"
+        
+        text = text.strip()
+        if len(text) > 50000:  # 50KB制限
+            return "テキストが長すぎます。50,000文字以下にしてください。"
         
         # テキストのクリーニング
-        cleaned_text = clean_text(text)
+        try:
+            cleaned_text = clean_text(text)
+        except Exception as e:
+            logging.warning(f"テキストクリーニングでエラー: {e}")
+            # クリーニングに失敗した場合は元のテキストを使用
+            cleaned_text = text
+        
+        if not cleaned_text or not cleaned_text.strip():
+            return "クリーニング後のテキストが空になりました。別のテキストを試してください。"
         
         # ゆっくりボイス形式で整形
-        formatted_text = add_line_breaks(
-            cleaned_text,
-            length=22,
-            max_total_chars=4800,
-            do_split=split_text
-        )
+        try:
+            formatted_text = add_line_breaks(
+                cleaned_text,
+                length=22,
+                max_total_chars=4800,
+                do_split=split_text
+            )
+        except Exception as e:
+            logging.error(f"テキスト整形でエラー: {e}")
+            # 基本的な整形にフォールバック
+            lines = cleaned_text.split('\n')[:10]  # 最初の10行のみ
+            formatted_text = '\n'.join([f'ゆっくり霊夢\t"{line}"\t{len(line)}' for line in lines if line.strip()])
+        
+        if not formatted_text or not formatted_text.strip():
+            return "テキストの整形に失敗しました。入力テキストを確認してください。"
         
         return formatted_text
         
     except Exception as e:
-        logging.error(f"テキスト処理でエラー: {e}")
-        return f"エラーが発生しました: {str(e)}"
+        logging.error(f"テキスト処理でエラー: {e}", exc_info=True)
+        return f"処理中にエラーが発生しました。\nエラー詳細: {str(e)[:100]}..."
+
+@app.get("/health")
+async def health_check():
+    """ヘルスチェック用エンドポイント"""
+    return {
+        "status": "ok",
+        "message": "あにまんch スクレイピングツール稼働中",
+        "timestamp": datetime.now().isoformat()
+    }
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -1043,6 +1030,9 @@ async def websocket_endpoint(websocket: WebSocket):
             # WebSocketはプログレス通知用
             await websocket.send_text(f"Echo: {data}")
     except WebSocketDisconnect:
+        manager.disconnect(websocket)
+    except Exception as e:
+        logging.error(f"WebSocketエラー: {e}")
         manager.disconnect(websocket)
 
 if __name__ == "__main__":
