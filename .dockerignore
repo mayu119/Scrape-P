@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.git/
+.gitignore
+.dockerignore
+README.md
+logs/
+.env
+.venv/
+venv/
+Procfile
+railway.json
+vercel.json
+全スレ取得.py
+Textprocessor.py
