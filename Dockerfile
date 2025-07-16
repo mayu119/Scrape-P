@@ -8,9 +8,14 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # アプリケーションファイルをコピー
 COPY api/ ./api/
+COPY start.sh ./start.sh
 
-# ポートを公開
-EXPOSE 8000
+# スタートアップスクリプトを実行可能にする
+RUN chmod +x /app/start.sh
 
-# アプリケーションを起動 (spaCy不要の軽量版)
-CMD ["uvicorn", "api.index:app", "--host", "0.0.0.0", "--port", "8000"]
+# Railway用ポート環境変数を使用
+ENV PORT=8000
+EXPOSE $PORT
+
+# スタートアップスクリプトを実行
+CMD ["./start.sh"]
