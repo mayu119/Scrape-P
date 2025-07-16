@@ -12,5 +12,5 @@ COPY api/ ./api/
 # ポートを公開
 EXPOSE 8000
 
-# アプリケーションを起動
+# アプリケーションを起動 (spaCy不要の軽量版)
 CMD ["uvicorn", "api.index:app", "--host", "0.0.0.0", "--port", "8000"]
