@@ -25,6 +25,14 @@ if [ ! -f "api/index.py" ]; then
     exit 1
 fi
 
-# Start the application with proper error handling
-echo "Starting uvicorn server..."
-exec uvicorn api.index:app --host 0.0.0.0 --port $PORT --log-level info
+# Step 2: Railway互換uvicorn設定でログストリーム統一
+echo "Starting uvicorn server with Railway-compatible logging..."
+echo "Using stdout for all log output to prevent Railway error classification"
+exec uvicorn api.index:app \
+    --host 0.0.0.0 \
+    --port $PORT \
+    --log-level info \
+    --access-log \
+    --use-colors false \
+    --log-config /dev/null \
+    --no-server-header

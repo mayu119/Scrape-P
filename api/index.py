@@ -1,6 +1,7 @@
 import os
 import re
 import logging
+import sys
 import requests
 from bs4 import BeautifulSoup, NavigableString
 from datetime import datetime
@@ -8,11 +9,60 @@ from fastapi import FastAPI, Request, Form, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
-# ログ設定
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+# Step 1&3: Railway完全互換ログ設定
+import json
+
+class RailwayLogFormatter(logging.Formatter):
+    """Railway専用ログフォーマッター - stdout専用でlevel分類を正確に"""
+    
+    def format(self, record):
+        # Railwayが正しく解析できる形式
+        log_entry = {
+            "timestamp": self.formatTime(record),
+            "level": record.levelname,
+            "logger": record.name,
+            "message": record.getMessage(),
+            "module": record.module,
+            "function": record.funcName
+        }
+        
+        # Railway環境では構造化ログ、開発環境では読みやすい形式
+        if os.environ.get("PORT", "8000") != "8000":  # Production (Railway)
+            return json.dumps(log_entry, ensure_ascii=False)
+        else:  # Development
+            return f'{log_entry["timestamp"]} - {log_entry["level"]} - {log_entry["message"]}'
+
+def setup_logging():
+    """Railway環境でログレベルが正確に分類されるよう完全対応"""
+    # 全ての既存ハンドラーをクリア
+    for handler in logging.root.handlers[:]:
+        logging.root.removeHandler(handler)
+    
+    # フォースstdoutハンドラー - Railwayがstderrをerrorとして分類するのを防ぐ
+    stdout_handler = logging.StreamHandler(sys.stdout)
+    stdout_handler.setLevel(logging.DEBUG)  # 全レベル対応
+    
+    # Railway専用フォーマッター適用
+    railway_formatter = RailwayLogFormatter()
+    stdout_handler.setFormatter(railway_formatter)
+    
+    # ルートロガー完全制御
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+    root_logger.addHandler(stdout_handler)
+    root_logger.propagate = False
+    
+    # Uvicornロガーも同じ設定に統一
+    uvicorn_logger = logging.getLogger("uvicorn")
+    uvicorn_logger.handlers = []
+    uvicorn_logger.addHandler(stdout_handler)
+    uvicorn_logger.propagate = False
+    
+    return root_logger
+
+# ログ設定を実行
+logger = setup_logging()
+logger.info("Railway logging configuration initialized - using stdout stream")
 
 # FastAPIアプリケーション
 app = FastAPI(
@@ -42,17 +92,22 @@ async def global_exception_handler(request: Request, exc: Exception):
 @app.on_event("startup")
 async def startup_event():
     try:
-        logging.info("=== アプリケーション起動 ===")
-        logging.info("FastAPI application started successfully")
-        logging.info("Available endpoints:")
-        logging.info("  GET  / - Web UI")
-        logging.info("  POST /api/scrape - スクレイピング")
-        logging.info("  POST /api/process - テキスト処理")
-        logging.info("  GET  /api/health - ヘルスチェック")
-        logging.info("Port: " + os.environ.get("PORT", "8000"))
-        logging.info("=========================")
+        logger.info("=== あにまんchスクレイピングツール起動 ===")
+        logger.info("FastAPI application started with Railway-compatible logging")
+        logger.info("Logging configuration: stdout-only, structured format")
+        logger.info("Available endpoints:")
+        logger.info("  GET  / - Web UI")
+        logger.info("  POST /api/scrape - スクレイピング")
+        logger.info("  POST /api/process - テキスト処理")
+        logger.info("  GET  /api/health - ヘルスチェック")
+        logger.info("  GET  /api/debug/logs - ログレベルテスト")
+        port = os.environ.get("PORT", "8000")
+        env_type = "Railway Production" if port != "8000" else "Development"
+        logger.info(f"Environment: {env_type} (Port: {port})")
+        logger.info("Logging: All levels -> stdout (Railway error classification fixed)")
+        logger.info("================================================")
     except Exception as e:
-        logging.error(f"Startup error: {e}", exc_info=True)
+        logger.error(f"Startup error: {e}", exc_info=True)
         raise
 
 # あにまんちスクレイピング機能
@@ -913,6 +968,61 @@ async def health_check():
             status_code=503,
             content={
                 "status": "unhealthy", 
+                "error": str(e),
+                "timestamp": datetime.now().isoformat()
+            }
+        )
+
+# Step 4: ログ検証・デバッグエンドポイント
+@app.get("/api/debug/logs")
+async def debug_logs(level: str = "all"):
+    """
+    Railway環境でログレベルが正しく分類されているかテスト
+    ?level=info|error|warning|debug|all
+    """
+    try:
+        test_message = f"Log level test at {datetime.now().isoformat()}"
+        results = []
+        
+        if level in ["debug", "all"]:
+            logger.debug(f"DEBUG: {test_message}")
+            results.append("DEBUG logged")
+        
+        if level in ["info", "all"]:
+            logger.info(f"INFO: {test_message}")
+            results.append("INFO logged")
+        
+        if level in ["warning", "all"]:
+            logger.warning(f"WARNING: {test_message}")
+            results.append("WARNING logged")
+        
+        if level in ["error", "all"]:
+            logger.error(f"ERROR: {test_message}")
+            results.append("ERROR logged")
+        
+        # ストリーム情報も返す
+        import sys
+        stream_info = {
+            "stdout_isatty": sys.stdout.isatty(),
+            "stderr_isatty": sys.stderr.isatty(),
+            "logging_handlers": [str(h) for h in logger.handlers],
+            "environment": "production" if os.environ.get("PORT", "8000") != "8000" else "development"
+        }
+        
+        return {
+            "status": "success",
+            "tested_levels": results,
+            "stream_info": stream_info,
+            "message": "Check Railway logs to verify level classification",
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Debug logs test failed: {e}", exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={
+                "status": "failed",
                 "error": str(e),
                 "timestamp": datetime.now().isoformat()
             }
