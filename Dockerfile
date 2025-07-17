@@ -18,4 +18,4 @@ ENV PORT=8000
 EXPOSE $PORT
 
 # スタートアップスクリプトを実行
-CMD ["./start.sh"]
+CMD ["/app/start.sh"]
