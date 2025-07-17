@@ -8,7 +8,7 @@ PORT=${PORT:-8000}
 
 echo "====== Railway Deployment Startup ======"
 echo "Starting あにまんch scraping application on port $PORT"
-echo "Current commit: $(git rev-parse --short HEAD 2>/dev/null || echo 'unknown')"
+echo "Current commit: $(git rev-parse --short HEAD 2>/dev/null || echo 'unknown') - Force deploy trigger"
 echo "Python version: $(python --version)"
 echo "Working directory: $(pwd)"
 echo "Environment variables:"
