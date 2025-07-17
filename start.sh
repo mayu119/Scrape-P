@@ -33,6 +33,5 @@ exec uvicorn api.index:app \
     --port $PORT \
     --log-level info \
     --access-log \
-    --use-colors false \
-    --log-config /dev/null \
+    --no-use-colors \
     --no-server-header
