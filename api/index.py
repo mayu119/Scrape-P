@@ -8,10 +8,28 @@ from fastapi import FastAPI, Request, Form
 from fastapi.responses import HTMLResponse
 
 # ログ設定
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 
 # FastAPIアプリケーション
-app = FastAPI()
+app = FastAPI(
+    title="あにまんch スクレイピングツール",
+    description="URLからあにまんchをスクレイピングして、ゆっくりボイス形式でテキスト処理",
+    version="1.0.0"
+)
+
+@app.on_event("startup")
+async def startup_event():
+    logging.info("=== アプリケーション起動 ===")
+    logging.info("FastAPI application started successfully")
+    logging.info("Available endpoints:")
+    logging.info("  GET  / - Web UI")
+    logging.info("  POST /api/scrape - スクレイピング")
+    logging.info("  POST /api/process - テキスト処理")
+    logging.info("  GET  /api/health - ヘルスチェック")
+    logging.info("=========================")
 
 # あにまんちスクレイピング機能
 def detect_animanch_urls(text):
@@ -810,7 +828,7 @@ async def scrape_url(url: str = Form(...)):
         return f"処理中にエラーが発生しました。\nエラー詳細: {str(e)[:100]}..."
 
 @app.post("/api/process")
-async def process_text(text: str = Form(...), split_text: bool = Form(True)):
+async def process_text(text: str = Form(...), split_text: bool = Form(default=True)):
     try:
         if not text or not text.strip():
             return "テキストが入力されていません。"
