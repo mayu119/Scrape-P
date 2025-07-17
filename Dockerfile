@@ -16,8 +16,7 @@ COPY api/ ./api/
 COPY start.sh /app/start.sh
 RUN chmod +x /app/start.sh && \
     ls -la /app/start.sh && \
-    echo "start.sh file verification:" && \
-    file /app/start.sh
+    echo "start.sh file verification: executable permissions set"
 
 # Layer 3: フォールバック用のシンプル起動スクリプト作成
 RUN echo '#!/bin/bash' > /app/fallback.sh && \
