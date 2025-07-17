@@ -10,27 +10,19 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 # Step 1&3: Railway完全互換ログ設定
-import json
 
 class RailwayLogFormatter(logging.Formatter):
-    """Railway専用ログフォーマッター - stdout専用でlevel分類を正確に"""
+    """Railway専用ログフォーマッター - 読みやすいブロック形式でstdout出力"""
     
     def format(self, record):
-        # Railwayが正しく解析できる形式
-        log_entry = {
-            "timestamp": self.formatTime(record),
-            "level": record.levelname,
-            "logger": record.name,
-            "message": record.getMessage(),
-            "module": record.module,
-            "function": record.funcName
-        }
+        # 読みやすいブロック形式（全環境統一）
+        timestamp = self.formatTime(record)
+        level = record.levelname
+        logger_name = record.name
+        message = record.getMessage()
         
-        # Railway環境では構造化ログ、開発環境では読みやすい形式
-        if os.environ.get("PORT", "8000") != "8000":  # Production (Railway)
-            return json.dumps(log_entry, ensure_ascii=False)
-        else:  # Development
-            return f'{log_entry["timestamp"]} - {log_entry["level"]} - {log_entry["message"]}'
+        # 統一された読みやすい形式
+        return f'{timestamp} - {logger_name} - {level} - {message}'
 
 def setup_logging():
     """Railway環境でログレベルが正確に分類されるよう完全対応"""
@@ -94,7 +86,7 @@ async def startup_event():
     try:
         logger.info("=== あにまんchスクレイピングツール起動 ===")
         logger.info("FastAPI application started with Railway-compatible logging")
-        logger.info("Logging configuration: stdout-only, structured format")
+        logger.info("Logging configuration: stdout-only, readable block format")
         logger.info("Available endpoints:")
         logger.info("  GET  / - Web UI")
         logger.info("  POST /api/scrape - スクレイピング")
