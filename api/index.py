@@ -4,8 +4,9 @@ import logging
 import requests
 from bs4 import BeautifulSoup, NavigableString
 from datetime import datetime
-from fastapi import FastAPI, Request, Form
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, Request, Form, HTTPException
+from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 
 # ログ設定
 logging.basicConfig(
@@ -20,16 +21,39 @@ app = FastAPI(
     version="1.0.0"
 )
 
+# CORS設定
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# グローバル例外ハンドラー
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logging.error(f"Global exception: {str(exc)}", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={"error": "Internal server error", "detail": str(exc)[:200]}
+    )
+
 @app.on_event("startup")
 async def startup_event():
-    logging.info("=== アプリケーション起動 ===")
-    logging.info("FastAPI application started successfully")
-    logging.info("Available endpoints:")
-    logging.info("  GET  / - Web UI")
-    logging.info("  POST /api/scrape - スクレイピング")
-    logging.info("  POST /api/process - テキスト処理")
-    logging.info("  GET  /api/health - ヘルスチェック")
-    logging.info("=========================")
+    try:
+        logging.info("=== アプリケーション起動 ===")
+        logging.info("FastAPI application started successfully")
+        logging.info("Available endpoints:")
+        logging.info("  GET  / - Web UI")
+        logging.info("  POST /api/scrape - スクレイピング")
+        logging.info("  POST /api/process - テキスト処理")
+        logging.info("  GET  /api/health - ヘルスチェック")
+        logging.info("Port: " + os.environ.get("PORT", "8000"))
+        logging.info("=========================")
+    except Exception as e:
+        logging.error(f"Startup error: {e}", exc_info=True)
+        raise
 
 # あにまんちスクレイピング機能
 def detect_animanch_urls(text):
@@ -869,11 +893,30 @@ async def process_text(text: str = Form(...), split_text: bool = Form(default=Tr
 
 @app.get("/api/health")
 async def health_check():
-    return {
-        "status": "ok",
-        "message": "あにまんch スクレイピングツール稼働中",
-        "timestamp": datetime.now().isoformat()
-    }
+    try:
+        # 基本的なテスト
+        import sys
+        port = os.environ.get("PORT", "8000")
+        
+        return {
+            "status": "healthy",
+            "message": "あにまんch スクレイピングツール稼働中",
+            "timestamp": datetime.now().isoformat(),
+            "version": "1.0.0",
+            "python_version": sys.version,
+            "port": port,
+            "environment": "production" if port != "8000" else "development"
+        }
+    except Exception as e:
+        logging.error(f"Health check failed: {e}", exc_info=True)
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "unhealthy", 
+                "error": str(e),
+                "timestamp": datetime.now().isoformat()
+            }
+        )
 
 # Railway用ハンドラー
 handler = app

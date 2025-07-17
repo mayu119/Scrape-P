@@ -8,11 +8,15 @@ PORT=${PORT:-8000}
 
 echo "====== Railway Deployment Startup ======"
 echo "Starting あにまんch scraping application on port $PORT"
-echo "Current commit: $(git rev-parse --short HEAD 2>/dev/null || echo 'unknown') - Force deploy trigger"
+echo "Current commit: $(git rev-parse --short HEAD 2>/dev/null || echo 'unknown') - Stable production version"
 echo "Python version: $(python --version)"
 echo "Working directory: $(pwd)"
 echo "Environment variables:"
 echo "  PORT=$PORT"
+echo "  NODE_ENV=${NODE_ENV:-production}"
+echo "File verification:"
+echo "  api/index.py exists: $([ -f api/index.py ] && echo 'YES' || echo 'NO')"
+echo "  Python modules can import: $(python -c 'import api.index; print(\"SUCCESS\")' 2>/dev/null || echo 'FAILED')"
 echo "========================================="
 
 # Check if the API module exists
